@@ -93,8 +93,14 @@ async function bookedTimeSlots(auth) {
   const events = res.data.items;
 }
 
+async function getCalenderInstance(auth) {
+  const calendar = google.calendar({ version: "v3", auth });
+  return calendar;
+}
+
 module.exports = {
   authorize1,
   saveInDB,
   getProviderCalenderIdAndTimeZone,
+  getCalenderInstance
 };

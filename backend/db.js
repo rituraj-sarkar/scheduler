@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 // Connect to MongoDB
-mongoose.connect('mongodb+srv://rajsarkarbongaigaon7:yrKyx3JhMi5wGPki@cluster0.d85qsle.mongodb.net/scheduler_app');
+mongoose.connect(process.env.MONGO_URL);
 
 // Define schemas
 const UserSchema = new mongoose.Schema({
