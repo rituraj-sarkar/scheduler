@@ -55,14 +55,19 @@ app.get("/getslots", authorizationMiddleWare, async (req, res) => {
     providerTimezone: primaryCalender.timeZone,
   };
   // convert appointee time to provider's timezone, both startime and endtime
-  const inputStartDate = moment.tz(startTime, appointeeTimezone, true);
-  const convertedStartTime = inputStartDate.clone().tz(providerTimezone);
-  const inputEndDate = moment.tz(endTime, appointeeTimezone);
-  const convertedEndTime = inputEndDate.clone().tz(providerTimezone);
+  const appointeeOffset = moment.tz(appointeeTimezone).utcOffset();
+  // const providerOffset = moment.tz(providerTimezone).utcOffset();
+  // const inputStartDate = moment.tz(startTime, appointeeTimezone);
+  const inputStartDate =
+    new Date(startTime).getTime() + -appointeeOffset * 60 * 1000;
+  const convertedStartTime = new Date(inputStartDate);
+  const inputEndDate =
+    new Date(endTime).getTime() + -appointeeOffset * 60 * 1000;
+  const convertedEndTime = new Date(inputEndDate);
   const eventData = await calendar.events.list({
     calendarId: providerId,
-    timeMin: new Date(convertedStartTime.format()).toISOString(),
-    timeMax: new Date(convertedEndTime.format()).toISOString(),
+    timeMin: new Date(convertedStartTime).toISOString(),
+    timeMax: new Date(convertedEndTime).toISOString(),
     singleEvents: true,
     orderBy: "startTime",
   });
@@ -71,8 +76,8 @@ app.get("/getslots", authorizationMiddleWare, async (req, res) => {
   // after getting the results convert the time slots to appointee time zone
   const { eventStartTimes, eventEndtimes } =
     getEventsSeparatedInStartTimeAndEndTime(events);
-  const modStartDate = convertedStartTime.toDate().setHours(0, 0, 0, 0);
-  const modEndDate = convertedEndTime.toDate().setHours(23, 59, 59, 999);
+  const modStartDate = convertedStartTime.setHours(0, 0, 0, 0); // convert it to next recent hour
+  const modEndDate = convertedEndTime.setHours(23, 59, 59, 999); // convert it to last recent hour
   const timeSlots = generateTimeSlots(
     modStartDate,
     modEndDate,
@@ -84,7 +89,55 @@ app.get("/getslots", authorizationMiddleWare, async (req, res) => {
   return res.json({ timeSlots: timeSlots });
 });
 
+app.get("/book-appointment", authorizationMiddleWare, async (req, res) => {
+  const { appointee, provider, startTime, endTime, appointeeTimezone } =
+    req.body;
 
+  const calendar = await authorize1(provider)
+    .then(getCalenderInstance)
+    .catch(console.error);
+
+  const appointeeOffset = moment.tz(appointeeTimezone).utcOffset();
+  const inputStartDate =
+    new Date(startTime).getTime() + -appointeeOffset * 60 * 1000;
+  const start = new Date(inputStartDate).toISOString();
+  const inputEndDate =
+    new Date(endTime).getTime() + -appointeeOffset * 60 * 1000;
+  const end = new Date(inputEndDate).toISOString();
+
+  const eventData = await calendar.events.list({
+    calendarId: provider,
+    timeMin: start,
+    timeMax: end,
+    singleEvents: true,
+    orderBy: "startTime",
+  });
+  const events = eventData.data.items;
+  if (events.length > 0) {
+    return res
+      .status(400)
+      .json({ msg: "Slot already booked! Please try a different slot" });
+  }
+
+  const event = {
+    summary: "PetaVue",
+    description: "Discuss project plans",
+    start: {
+      dateTime: `${start}`,
+      timeZone: `${appointeeTimezone}`,
+    },
+    end: {
+      dateTime: `${end}`,
+      timeZone: `${appointeeTimezone}`,
+    },
+    attendees: [{ email: `${appointee}` }, { email: `${provider}` }],
+  };
+  const response = await calendar.events.insert({
+    calendarId: "primary",
+    requestBody: event,
+  });
+  return res.json({ msg: response.data });
+});
 
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
